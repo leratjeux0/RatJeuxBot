@@ -10,27 +10,24 @@ intents = discord.Intents.default()
 bot = discord.Client(intents=intents)
 tree = discord.app_commands.CommandTree(bot)  # CommandTree doit être initialisé après on_ready
 
+#-------------------------------utilis---------------------------------
 def load_Bank():
     try:
         with open("Money.json", "r") as f:
             return json.load(f)
     except FileNotFoundError:
         return {}
-
 def save_Money(bank):
     with open("Money.json", "w") as f:
         json.dump(bank, f)
-
 def get_Bank(user_id):
     bank = load_Bank()
     return bank.get(str(user_id), 100)
-
 def update_Bank(user_id, amount):
     bank = load_Bank()
     bank[str(user_id)] = bank.get(str(user_id), 100) + amount
     save_Money(bank)
-
-class RejouerView(discord.ui.View):
+class ButtonMachineSous(discord.ui.View):
     def __init__(self, user_id, mise):
         super().__init__()
         self.user_id = user_id
@@ -69,12 +66,39 @@ class RejouerView(discord.ui.View):
         embed.set_footer(text=result_text)
 
         # Modifier le message existant avec le nouveau résultat
-        await interaction.response.edit_message(embed=embed, view=RejouerView(self.user_id, self.mise))
+        await interaction.response.edit_message(embed=embed, view=ButtonMachineSous(self.user_id, self.mise))
 
+    @discord.ui.button(label='Changer la mise', style=discord.ButtonStyle.secondary)
+    async def changer_mise(self, interaction: discord.Interaction, mise):
+
+        await interaction.response.send_message('Quelle est le nouveau montent de la mise ?', ephemeral=True)
+    
+        def check(m):
+            return m.author.id == self.user_id and m.channel.id == interaction.channel.id
+
+        msg = await bot.wait_for('message', check=check, timeout=60)
+        new_mise = msg.content
+
+        print(new_mise)
+
+        bonne_mise = False
+
+        while bonne_mise:
+            if new_mise <= 0:
+                await interaction.followup.send("La msie doit être supérieur à zéro.", ephemeral=True)
+            elif new_mise > get_Bank(self.user_id):
+                await interaction.followup.send("Tu n'as pas assez d'argent pour misé autant.", ephemeral=True)
+            else:
+                self.mise = new_mise
+                await interaction.followup.send(f'La nouvelle mise est de {self.mise}$', ephemeral=True)
+                machine_a_sous(interaction, self.mise)
+                return
+
+#-------------------------------Commande-------------------------------
 @tree.command(name='menu', description='Menu du casino')
 async def Menu(interaction: discord.Interaction):
-    embed = discord.Embed(title='💲Accuiel du casino💲', color=discord.Color.gold())
-    embed.add_field(name="Machine à Sous", value="CACA")
+    embed = discord.Embed(title='🪙 Accuiel du casino 🪙', color=discord.Color.gold())
+    embed.add_field(name="🎰 Machine à Sous 🎰", value="Gagne de l'argent en alignent 2 ou trois même icon.")
 
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
@@ -115,7 +139,7 @@ async def machine_a_sous(interaction: discord.Interaction, mise: int):
     embed.set_footer(text=result_text)
 
     # Envoyer le message initial avec le bouton "Rejouer"
-    await interaction.response.send_message(embed=embed, view=RejouerView(user_id, mise), ephemeral=True)
+    await interaction.response.send_message(embed=embed, view=ButtonMachineSous(user_id, mise), ephemeral=True)
 
 @tree.command(name='money', description="Voir l'argent en bank")
 async def money(interaction: discord.Interaction):
@@ -126,6 +150,9 @@ async def money(interaction: discord.Interaction):
 
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
+
+
+#-------------------------------event-------------------------------
 @bot.event
 async def on_ready():
     await tree.sync()

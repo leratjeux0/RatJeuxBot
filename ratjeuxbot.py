@@ -9,6 +9,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Activer les intents pour lire les messages
+
 intents = discord.Intents.all()
 bot = discord.Client(intents=intents)
 tree = discord.app_commands.CommandTree(bot)
@@ -133,7 +134,6 @@ class ButtonMachineSous(discord.ui.View):
 
 
 # ------------------------------- Commandes -------------------------------
-
 @tree.command(name='menu', description='Menu du casino')
 async def menu(interaction: discord.Interaction):
     embed = discord.Embed(title='🪙 Accueil du casino 🪙', color=discord.Color.gold())

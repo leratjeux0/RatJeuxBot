@@ -1,33 +1,49 @@
 import discord
 import os
-from dotenv import load_dotenv
 import json
 import random
+import asyncio
+from dotenv import load_dotenv
 
+# Charger les variables d'environnement
 load_dotenv()
 
-intents = discord.Intents.default()
+# Activer les intents pour lire les messages
+intents = discord.Intents.all()
 bot = discord.Client(intents=intents)
-tree = discord.app_commands.CommandTree(bot)  # CommandTree doit être initialisé après on_ready
+tree = discord.app_commands.CommandTree(bot)
 
-#-------------------------------utilis---------------------------------
+# ------------------------------- Gestion de l'argent -------------------------------
+
 def load_Bank():
+    """Charge les données de la banque depuis un fichier JSON."""
     try:
         with open("Money.json", "r") as f:
             return json.load(f)
     except FileNotFoundError:
         return {}
+
 def save_Money(bank):
+    """Enregistre les données de la banque dans un fichier JSON."""
     with open("Money.json", "w") as f:
         json.dump(bank, f)
+
 def get_Bank(user_id):
+    """Récupère le solde d'un utilisateur."""
     bank = load_Bank()
     return bank.get(str(user_id), 100)
+
 def update_Bank(user_id, amount):
+    """Met à jour le solde d'un utilisateur."""
     bank = load_Bank()
     bank[str(user_id)] = bank.get(str(user_id), 100) + amount
     save_Money(bank)
+
+# ------------------------------- Gestion de la Machine à Sous -------------------------------
+
 class ButtonMachineSous(discord.ui.View):
+    """Boutons interactifs pour la machine à sous."""
+    
     def __init__(self, user_id, mise):
         super().__init__()
         self.user_id = user_id
@@ -35,11 +51,12 @@ class ButtonMachineSous(discord.ui.View):
 
     @discord.ui.button(label="Rejouer 🎰", style=discord.ButtonStyle.primary)
     async def rejouer(self, interaction: discord.Interaction, button: discord.ui.Button):
+        """Permet de rejouer une partie avec la même mise."""
         if interaction.user.id != self.user_id:
             await interaction.response.send_message("Tu ne peux pas rejouer cette partie !", ephemeral=True)
             return
 
-        # Générer un nouveau tirage
+        # Génération du tirage
         rouleaux = ["🍒", "🍋", "🔔", "💎", "7️⃣"]
         a, b, c = random.choices(rouleaux, k=3)
 
@@ -51,13 +68,13 @@ class ButtonMachineSous(discord.ui.View):
             gain = self.mise * 2
             result_text = "Tu as gagné **2x** ta mise !"
         else:
-            gain -= self.mise
+            gain = -self.mise
             result_text = "Perdu! Retente ta chance."
 
         update_Bank(self.user_id, gain)
         new_Bank = get_Bank(self.user_id)
 
-        # Créer un nouvel embed avec les résultats mis à jour
+        # Créer l'embed de résultat
         embed = discord.Embed(title="🎰 Machine à Sous 🎰", color=discord.Color.gold())
         embed.add_field(name="🎰 Résultat :", value=f"| {a} | {b} | {c} |", inline=False)
         embed.add_field(name="💰 Mise :", value=f"{self.mise}💰", inline=False)
@@ -65,40 +82,62 @@ class ButtonMachineSous(discord.ui.View):
         embed.add_field(name="💵 Nouveau solde :", value=f"{new_Bank}💰", inline=False)
         embed.set_footer(text=result_text)
 
-        # Modifier le message existant avec le nouveau résultat
+        # Modifier le message avec le nouveau résultat
         await interaction.response.edit_message(embed=embed, view=ButtonMachineSous(self.user_id, self.mise))
 
     @discord.ui.button(label='Changer la mise', style=discord.ButtonStyle.secondary)
-    async def changer_mise(self, interaction: discord.Interaction, mise):
+    async def changer_mise(self, interaction: discord.Interaction, button: discord.ui.Button):
+        """Permet de changer la mise."""
+        if interaction.user.id != self.user_id:
+            await interaction.response.send_message("Tu ne peux pas modifier cette mise !", ephemeral=True)
+            return
 
-        await interaction.response.send_message('Quelle est le nouveau montent de la mise ?', ephemeral=True)
-    
+        await interaction.response.send_message("Quelle est le nouveau montant de la mise ?", ephemeral=True)
+
         def check(m):
-            return m.author.id == self.user_id and m.channel.id == interaction.channel.id
+            return m.author.id == self.user_id and m.channel.id == interaction.channel.id and m.content.isdigit()
 
-        msg = await bot.wait_for('message', check=check, timeout=60)
-        new_mise = msg.content
+        try:
+            msg = await bot.wait_for("message", check=check, timeout=60)
+            new_mise = int(msg.content)
+        except asyncio.TimeoutError:
+            await interaction.followup.send("⏳ Temps écoulé, mise inchangée.", ephemeral=True)
+            return
 
-        print(new_mise)
+        await msg.channel.purge(limit=1)
 
-        bonne_mise = False
+        if new_mise <= 0:
+            await interaction.followup.send("❌ La mise doit être supérieure à zéro.", ephemeral=True)
+        elif new_mise > get_Bank(self.user_id):
+            await interaction.followup.send("❌ Tu n'as pas assez d'argent pour miser autant.", ephemeral=True)
+        else:
+            self.mise = new_mise
+            await interaction.followup.send(f"✅ La nouvelle mise est de {self.mise}💰", ephemeral=True)
 
-        while bonne_mise:
-            if new_mise <= 0:
-                await interaction.followup.send("La msie doit être supérieur à zéro.", ephemeral=True)
-            elif new_mise > get_Bank(self.user_id):
-                await interaction.followup.send("Tu n'as pas assez d'argent pour misé autant.", ephemeral=True)
-            else:
-                self.mise = new_mise
-                await interaction.followup.send(f'La nouvelle mise est de {self.mise}$', ephemeral=True)
-                machine_a_sous(interaction, self.mise)
-                return
+            # Obtenir la commande et utiliser un followup
+            command = tree.get_command("machine-a-sous")
+            if command:
+                class FakeInteraction:
+                    """Classe simulant une interaction pour éviter le problème d'InteractionResponded"""
+                    user = interaction.user
+                    async def response(self):
+                        class FakeResponse:
+                            async def send_message(*args, **kwargs):
+                                await interaction.followup.send(*args, **kwargs)
+                        return FakeResponse()
+                    async def followup(self):
+                        return interaction.followup
 
-#-------------------------------Commande-------------------------------
+                fake_interaction = FakeInteraction()
+                await command.callback(fake_interaction, self.mise)
+
+
+# ------------------------------- Commandes -------------------------------
+
 @tree.command(name='menu', description='Menu du casino')
-async def Menu(interaction: discord.Interaction):
-    embed = discord.Embed(title='🪙 Accuiel du casino 🪙', color=discord.Color.gold())
-    embed.add_field(name="🎰 Machine à Sous 🎰", value="Gagne de l'argent en alignent 2 ou trois même icon.")
+async def menu(interaction: discord.Interaction):
+    embed = discord.Embed(title='🪙 Accueil du casino 🪙', color=discord.Color.gold())
+    embed.add_field(name="🎰 Machine à Sous 🎰", value="Gagne de l'argent en alignant 2 ou 3 mêmes icônes.")
 
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
@@ -108,10 +147,10 @@ async def machine_a_sous(interaction: discord.Interaction, mise: int):
     solde = get_Bank(user_id)
 
     if mise <= 0:
-        await interaction.response.send_message("Ta mise doit être supérieure à zéro", ephemeral=True)
+        await interaction.response.send_message("❌ Ta mise doit être supérieure à zéro.", ephemeral=True)
         return
     elif mise > solde:
-        await interaction.response.send_message("Tu n'as pas assez d'argent pour miser autant!", ephemeral=True)
+        await interaction.response.send_message("❌ Tu n'as pas assez d'argent pour miser autant !", ephemeral=True)
         return
 
     rouleaux = ["🍒", "🍋", "🔔", "💎", "7️⃣"]
@@ -125,7 +164,7 @@ async def machine_a_sous(interaction: discord.Interaction, mise: int):
         gain = mise * 2
         result_text = "Tu as gagné **2x** ta mise !"
     else:
-        gain -= mise
+        gain = -mise
         result_text = "Perdu! Retente ta chance."
 
     update_Bank(user_id, gain)
@@ -138,21 +177,10 @@ async def machine_a_sous(interaction: discord.Interaction, mise: int):
     embed.add_field(name="💵 Nouveau solde :", value=f"{new_Bank}💰", inline=False)
     embed.set_footer(text=result_text)
 
-    # Envoyer le message initial avec le bouton "Rejouer"
     await interaction.response.send_message(embed=embed, view=ButtonMachineSous(user_id, mise), ephemeral=True)
 
-@tree.command(name='money', description="Voir l'argent en bank")
-async def money(interaction: discord.Interaction):
-    user_id = interaction.user.id
-    solde = get_Bank(user_id)
-    embed = discord.Embed(title='🏛️ Bank 🏛️', color=discord.Color.gold())
-    embed.add_field(name='💵 Argent 💵', value=f'💰 Vous avez {solde}$ sur votre compte. 💰')
+# ------------------------------- Événement -------------------------------
 
-    await interaction.response.send_message(embed=embed, ephemeral=True)
-
-
-
-#-------------------------------event-------------------------------
 @bot.event
 async def on_ready():
     await tree.sync()

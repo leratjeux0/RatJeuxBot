@@ -66,21 +66,23 @@ class ButtonMachineSous(discord.ui.View):
             gain = self.mise * 5
             result_text = "JACKPOT!!! Tu remportes **5x** ta mise !"
         elif a == b or b == c or c == a:
-            gain = self.mise * 2
-            result_text = "Tu as gagné **2x** ta mise !"
+            gain = self.mise / 2
+            result_text = "Dommage tu y étais presque. Retente ta chance."
         else:
             gain = -self.mise
             result_text = "Perdu! Retente ta chance."
 
         update_Bank(self.user_id, gain)
-        new_Bank = get_Bank(self.user_id)
+        Bank = get_Bank(self.user_id)
+        new_bank = round(Bank)
+        new_gain = round(gain)
 
         # Créer l'embed de résultat
         embed = discord.Embed(title="🎰 Machine à Sous 🎰", color=discord.Color.gold())
         embed.add_field(name="🎰 Résultat :", value=f"| {a} | {b} | {c} |", inline=False)
         embed.add_field(name="💰 Mise :", value=f"{self.mise}💰", inline=False)
-        embed.add_field(name="🏆 Gain :", value=f"{gain if gain > 0 else 0}💰", inline=True)
-        embed.add_field(name="💵 Nouveau solde :", value=f"{new_Bank}💰", inline=False)
+        embed.add_field(name="🏆 Gain :", value=f"{new_gain if new_gain > 0 else 0}💰", inline=True)
+        embed.add_field(name="💵 Nouveau solde :", value=f"{new_bank}💰", inline=False)
         embed.set_footer(text=result_text)
 
         # Modifier le message avec le nouveau résultat
@@ -107,8 +109,8 @@ class ButtonMachineSous(discord.ui.View):
 
         await msg.channel.purge(limit=1)
 
-        if new_mise <= 0:
-            await interaction.followup.send("❌ La mise doit être supérieure à zéro.", ephemeral=True)
+        if new_mise <= 10:
+            await interaction.followup.send("❌ La mise doit être au minimum de 10$", ephemeral=True)
         elif new_mise > get_Bank(self.user_id):
             await interaction.followup.send("❌ Tu n'as pas assez d'argent pour miser autant.", ephemeral=True)
         else:
@@ -118,19 +120,7 @@ class ButtonMachineSous(discord.ui.View):
             # Obtenir la commande et utiliser un followup
             command = tree.get_command("machine-a-sous")
             if command:
-                class FakeInteraction:
-                    """Classe simulant une interaction pour éviter le problème d'InteractionResponded"""
-                    user = interaction.user
-                    async def response(self):
-                        class FakeResponse:
-                            async def send_message(*args, **kwargs):
-                                await interaction.followup.send(*args, **kwargs)
-                        return FakeResponse()
-                    async def followup(self):
-                        return interaction.followup
-
-                fake_interaction = FakeInteraction()
-                await command.callback(fake_interaction, self.mise)
+                await command.callback(interaction, self.mise)
 
 
 # ------------------------------- Commandes -------------------------------
@@ -146,14 +136,14 @@ async def machine_a_sous(interaction: discord.Interaction, mise: int):
     user_id = interaction.user.id
     solde = get_Bank(user_id)
 
-    if mise <= 0:
-        await interaction.response.send_message("❌ Ta mise doit être supérieure à zéro.", ephemeral=True)
+    if mise <= 9:
+        await interaction.response.send_message("❌ Ta mise doit être minimum de 10$.", ephemeral=True)
         return
     elif mise > solde:
         await interaction.response.send_message("❌ Tu n'as pas assez d'argent pour miser autant !", ephemeral=True)
         return
 
-    rouleaux = ["🍒", "🍋", "🔔", "💎", "7️⃣"]
+    rouleaux = ["🍒", "🍋","🍓","🔔", "💎", "7️⃣"]
     a, b, c = random.choices(rouleaux, k=3)
 
     gain = 0
@@ -161,23 +151,29 @@ async def machine_a_sous(interaction: discord.Interaction, mise: int):
         gain = mise * 5
         result_text = "JACKPOT!!! Tu remportes **5x** ta mise !"
     elif a == b or b == c or c == a:
-        gain = mise * 2
-        result_text = "Tu as gagné **2x** ta mise !"
+        gain = mise / 2
+        result_text = "Dommage tu y étais presque. Retente ta chance."
     else:
         gain = -mise
         result_text = "Perdu! Retente ta chance."
 
     update_Bank(user_id, gain)
-    new_Bank = get_Bank(user_id)
+    Bank = get_Bank(user_id)
+    new_bank = round(Bank)
+    new_gain = round(gain)
 
     embed = discord.Embed(title="🎰 Machine à Sous 🎰", color=discord.Color.gold())
     embed.add_field(name="🎰 Résultat :", value=f"| {a} | {b} | {c} |", inline=False)
     embed.add_field(name="💰 Mise :", value=f"{mise}💰", inline=False)
-    embed.add_field(name="🏆 Gain :", value=f"{gain if gain > 0 else 0}💰", inline=True)
-    embed.add_field(name="💵 Nouveau solde :", value=f"{new_Bank}💰", inline=False)
+    embed.add_field(name="🏆 Gain :", value=f"{new_bank if new_gain > 0 else 0}💰", inline=True)
+    embed.add_field(name="💵 Nouveau solde :", value=f"{new_bank}💰", inline=False)
     embed.set_footer(text=result_text)
 
-    await interaction.response.send_message(embed=embed, view=ButtonMachineSous(user_id, mise), ephemeral=True)
+    if not interaction.response.is_done():
+        await interaction.response.send_message(embed=embed, view=ButtonMachineSous(user_id, mise), ephemeral=True)
+    else:
+        await interaction.followup.send(embed=embed, view=ButtonMachineSous(user_id, mise), ephemeral=True)
+
 
 # ------------------------------- Événement -------------------------------
 

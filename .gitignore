@@ -1,3 +1,5 @@
 .env
-Money.json
-
+/json/Money.json
+cogs/__pycache__/tools.cpython-311.pyc
+cogs/__pycache__/jeux.cpython-311.pyc
+cogs/__pycache__/interactions.cpython-311.pyc

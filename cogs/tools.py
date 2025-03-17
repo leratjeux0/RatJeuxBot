@@ -26,6 +26,7 @@ def create_user(user_id):
     if str(user_id) not in bank:
         bank[str(user_id)] = 100
         save_data("Money", bank) 
+        print("jouer créer")
 
 # --- --- ---
 
